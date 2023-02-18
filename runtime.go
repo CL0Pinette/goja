@@ -187,7 +187,7 @@ type Runtime struct {
 	methodsInfoCache map[reflect.Type]*reflectMethodsInfo
 
 	fieldNameMapper FieldNameMapper
-
+    simpleMapTypes  map[reflect.Type]func(interface{}) map[string]interface{}
 	vm    *vm
 	hash  *maphash.Hash
 	idSeq uint64
@@ -1934,6 +1934,20 @@ func (r *Runtime) toValue(i interface{}, origValue reflect.Value) Value {
 		return _null
 	}
 
+    if convert, isSimpleMapType := r.simpleMapTypes[value.Type()]; isSimpleMapType {
+		obj := &Object{runtime: r}
+		m := &objectGoMapSimple{
+			baseObject: baseObject{
+				val:        obj,
+				extensible: true,
+			},
+			data: convert(i),
+		}
+		obj.self = m
+		m.init()
+		return obj
+	}
+
 	switch value.Kind() {
 	case reflect.Map:
 		if value.Type().NumMethod() == 0 {
@@ -2459,6 +2473,13 @@ func (r *Runtime) New(construct Value, args ...Value) (o *Object, err error) {
 		o = r.builtin_new(r.toObject(construct), args)
 	})
 	return
+}
+
+func (r *Runtime) RegisterSimpleMapType(t reflect.Type, convert func(interface{}) map[string]interface{}) {
+	if r.simpleMapTypes == nil {
+		r.simpleMapTypes = map[reflect.Type]func(interface{}) map[string]interface{}{}
+	}
+	r.simpleMapTypes[t] = convert
 }
 
 // Callable represents a JavaScript function that can be called from Go.
